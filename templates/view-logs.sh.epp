@@ -1,0 +1,111 @@
+#!/bin/bash
+
+# View Supabase Logs
+# This script helps view logs from Supabase services
+
+set -euo pipefail
+
+DOCKER_DIR="<%= $docker_dir %>"
+
+usage() {
+    echo "Usage: $0 [service] [options]"
+    echo ""
+    echo "Services:"
+    echo "  all       - Show logs from all services (default)"
+    echo "  db        - PostgreSQL database"
+    echo "  auth      - GoTrue authentication service"
+    echo "  rest      - PostgREST API service"
+    echo "  kong      - Kong API Gateway"
+    echo "  studio    - Supabase Studio dashboard"
+    echo "  realtime  - Realtime service"
+    echo "  storage   - Storage service"
+    echo "  meta      - Meta service"
+    echo ""
+    echo "Options:"
+    echo "  -f, --follow    Follow log output (like tail -f)"
+    echo "  -n, --lines N   Show last N lines (default: 100)"
+    echo "  -t, --tail      Show only new log entries (combine with -f)"
+    echo ""
+    echo "Examples:"
+    echo "  $0                    # Show recent logs from all services"
+    echo "  $0 db -f             # Follow database logs"
+    echo "  $0 auth -n 50        # Show last 50 lines from auth service"
+    echo "  $0 all -f            # Follow logs from all services"
+}
+
+# Default values
+SERVICE="all"
+FOLLOW=""
+LINES="100"
+TAIL=""
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -f|--follow)
+            FOLLOW="-f"
+            shift
+            ;;
+        -n|--lines)
+            LINES="$2"
+            shift 2
+            ;;
+        -t|--tail)
+            TAIL="--tail=0"
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            if [[ -z "$SERVICE" || "$SERVICE" == "all" ]]; then
+                SERVICE="$1"
+            fi
+            shift
+            ;;
+    esac
+done
+
+# Change to Docker directory
+cd "${DOCKER_DIR}"
+
+# Check if services are running
+if ! docker-compose ps | grep -q "Up"; then
+    echo "WARNING: Some or all Supabase services may not be running"
+    echo "Current service status:"
+    docker-compose ps
+    echo ""
+fi
+
+# Build docker-compose logs command
+CMD="docker-compose logs"
+
+if [[ -n "$TAIL" ]]; then
+    CMD="$CMD $TAIL"
+else
+    CMD="$CMD --tail=$LINES"
+fi
+
+if [[ -n "$FOLLOW" ]]; then
+    CMD="$CMD $FOLLOW"
+fi
+
+# Add service filter if not 'all'
+if [[ "$SERVICE" != "all" ]]; then
+    # Validate service name
+    if ! docker-compose config --services | grep -q "^${SERVICE}$"; then
+        echo "ERROR: Unknown service '$SERVICE'"
+        echo "Available services:"
+        docker-compose config --services
+        exit 1
+    fi
+    CMD="$CMD $SERVICE"
+fi
+
+echo "Showing logs for: $SERVICE"
+echo "Command: $CMD"
+echo "----------------------------------------"
+
+# Execute the command
+exec $CMD 

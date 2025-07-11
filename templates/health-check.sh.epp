@@ -1,0 +1,253 @@
+#!/bin/bash
+
+# Supabase Health Check Script
+# This script monitors the health of Supabase services
+
+set -euo pipefail
+
+# Configuration
+DOCKER_DIR="<%= $docker_dir %>"
+LOG_FILE="/opt/supabase/logs/health-check.log"
+MAX_LOG_SIZE=10485760  # 10MB
+
+# Logging function
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "${LOG_FILE}"
+}
+
+# Rotate log if it gets too large
+rotate_log() {
+    if [ -f "${LOG_FILE}" ] && [ $(stat -c%s "${LOG_FILE}") -gt ${MAX_LOG_SIZE} ]; then
+        mv "${LOG_FILE}" "${LOG_FILE}.old"
+        touch "${LOG_FILE}"
+    fi
+}
+
+# Check if Docker is running
+check_docker() {
+    if ! docker info >/dev/null 2>&1; then
+        log "CRITICAL: Docker is not running"
+        return 1
+    fi
+    return 0
+}
+
+# Check Supabase services
+check_services() {
+    local failed_services=()
+    
+    cd "${DOCKER_DIR}"
+    
+    # Get service status
+    local service_status
+    service_status=$(docker-compose ps --format "table {{.Service}}\t{{.State}}\t{{.Status}}" 2>/dev/null || echo "ERROR")
+    
+    if [ "$service_status" = "ERROR" ]; then
+        log "ERROR: Could not get service status"
+        return 1
+    fi
+    
+    # Check each critical service
+    local critical_services=("db" "auth" "rest" "kong" "studio")
+    
+    for service in "${critical_services[@]}"; do
+        if ! echo "$service_status" | grep -q "$service.*Up"; then
+            failed_services+=("$service")
+        fi
+    done
+    
+    if [ ${#failed_services[@]} -gt 0 ]; then
+        log "CRITICAL: Failed services: ${failed_services[*]}"
+        return 1
+    fi
+    
+    log "INFO: All critical services are running"
+    return 0
+}
+
+# Check database connectivity
+check_database() {
+    cd "${DOCKER_DIR}"
+    
+    if docker-compose exec -T db pg_isready -U postgres >/dev/null 2>&1; then
+        log "INFO: Database is accepting connections"
+        return 0
+    else
+        log "CRITICAL: Database is not accepting connections"
+        return 1
+    fi
+}
+
+# Check API endpoints
+check_api() {
+    local api_url="http://localhost:8000"
+    
+    # Check Kong API Gateway
+    if curl -s -f "${api_url}/health" >/dev/null 2>&1; then
+        log "INFO: API Gateway is responding"
+    else
+        log "WARNING: API Gateway health check failed"
+        return 1
+    fi
+    
+    # Check PostgREST
+    if curl -s -f "${api_url}/rest/v1/" >/dev/null 2>&1; then
+        log "INFO: PostgREST API is responding"
+    else
+        log "WARNING: PostgREST API is not responding"
+        return 1
+    fi
+    
+    return 0
+}
+
+# Check disk space
+check_disk_space() {
+    local usage
+    usage=$(df /opt/supabase | awk 'NR==2 {print $5}' | sed 's/%//')
+    
+    if [ "$usage" -gt 90 ]; then
+        log "CRITICAL: Disk usage is at ${usage}%"
+        return 1
+    elif [ "$usage" -gt 80 ]; then
+        log "WARNING: Disk usage is at ${usage}%"
+        return 1
+    else
+        log "INFO: Disk usage is at ${usage}%"
+        return 0
+    fi
+}
+
+# Check memory usage
+check_memory() {
+    local mem_usage
+    mem_usage=$(free | awk 'NR==2{printf "%.0f", $3*100/$2}')
+    
+    if [ "$mem_usage" -gt 90 ]; then
+        log "CRITICAL: Memory usage is at ${mem_usage}%"
+        return 1
+    elif [ "$mem_usage" -gt 80 ]; then
+        log "WARNING: Memory usage is at ${mem_usage}%"
+    else
+        log "INFO: Memory usage is at ${mem_usage}%"
+    fi
+    
+    return 0
+}
+
+# Check container resource usage
+check_container_resources() {
+    cd "${DOCKER_DIR}"
+    
+    # Check for containers using too much CPU or memory
+    local stats
+    stats=$(docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}" 2>/dev/null | grep supabase || true)
+    
+    if [ -n "$stats" ]; then
+        log "INFO: Container resource usage:"
+        echo "$stats" | while read line; do
+            log "INFO: $line"
+        done
+    fi
+    
+    return 0
+}
+
+# Restart failed services
+restart_failed_services() {
+    log "INFO: Attempting to restart failed services..."
+    cd "${DOCKER_DIR}"
+    
+    if docker-compose restart; then
+        log "INFO: Services restarted successfully"
+        sleep 30  # Wait for services to stabilize
+        return 0
+    else
+        log "ERROR: Failed to restart services"
+        return 1
+    fi
+}
+
+# Send alert (placeholder - implement your preferred alerting method)
+send_alert() {
+    local message="$1"
+    local severity="$2"
+    
+    # Example: Send to syslog
+    logger -t supabase-health "$severity: $message"
+    
+    # Add your alerting logic here (email, Slack, webhook, etc.)
+    # echo "$message" | mail -s "Supabase Health Alert" admin@example.com
+}
+
+# Main health check function
+main() {
+    rotate_log
+    
+    local overall_status=0
+    local failed_checks=()
+    
+    log "Starting health check..."
+    
+    # Run all checks
+    if ! check_docker; then
+        failed_checks+=("docker")
+        overall_status=1
+    fi
+    
+    if ! check_services; then
+        failed_checks+=("services")
+        overall_status=1
+    fi
+    
+    if ! check_database; then
+        failed_checks+=("database")
+        overall_status=1
+    fi
+    
+    if ! check_api; then
+        failed_checks+=("api")
+        overall_status=1
+    fi
+    
+    if ! check_disk_space; then
+        failed_checks+=("disk")
+        overall_status=1
+    fi
+    
+    if ! check_memory; then
+        failed_checks+=("memory")
+        overall_status=1
+    fi
+    
+    check_container_resources
+    
+    # Report results
+    if [ $overall_status -eq 0 ]; then
+        log "SUCCESS: All health checks passed"
+    else
+        log "FAILURE: Health checks failed: ${failed_checks[*]}"
+        send_alert "Supabase health check failed: ${failed_checks[*]}" "CRITICAL"
+        
+        # Attempt automatic recovery for service failures
+        if [[ " ${failed_checks[*]} " =~ " services " ]] || [[ " ${failed_checks[*]} " =~ " database " ]]; then
+            log "INFO: Attempting automatic recovery..."
+            if restart_failed_services; then
+                log "INFO: Automatic recovery successful"
+                send_alert "Supabase automatic recovery successful" "INFO"
+            else
+                log "ERROR: Automatic recovery failed"
+                send_alert "Supabase automatic recovery failed - manual intervention required" "CRITICAL"
+            fi
+        fi
+    fi
+    
+    log "Health check completed with status: $overall_status"
+    exit $overall_status
+}
+
+# Ensure log directory exists
+mkdir -p "$(dirname "${LOG_FILE}")"
+
+# Run main function
+main "$@" 

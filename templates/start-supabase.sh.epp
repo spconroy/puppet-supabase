@@ -1,0 +1,45 @@
+#!/bin/bash
+
+# Start Supabase Services
+# This script manually starts the Supabase Docker Compose stack
+
+set -euo pipefail
+
+DOCKER_DIR="<%= $docker_dir %>"
+
+echo "Starting Supabase services..."
+
+# Change to Docker directory
+cd "${DOCKER_DIR}"
+
+# Check if Docker is running
+if ! docker info >/dev/null 2>&1; then
+    echo "ERROR: Docker is not running. Please start Docker first."
+    exit 1
+fi
+
+# Pull latest images (optional)
+echo "Pulling latest Docker images..."
+docker-compose pull
+
+# Start services
+echo "Starting Supabase stack..."
+if docker-compose up -d; then
+    echo "Supabase services started successfully!"
+    
+    # Wait a moment for services to initialize
+    echo "Waiting for services to initialize..."
+    sleep 10
+    
+    # Show service status
+    echo "Service status:"
+    docker-compose ps
+    
+    echo ""
+    echo "Supabase is starting up. Please wait a few minutes for all services to be ready."
+    echo "You can check the status with: docker-compose ps"
+    echo "View logs with: docker-compose logs -f"
+else
+    echo "ERROR: Failed to start Supabase services"
+    exit 1
+fi 

@@ -1,0 +1,49 @@
+[Unit]
+Description=Supabase Stack
+Requires=docker.service
+After=docker.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=notify
+Restart=always
+RestartSec=5s
+User=<%= $user %>
+Group=<%= $group %>
+WorkingDirectory=<%= $docker_dir %>
+Environment=HOME=/home/<%= $user %>
+
+# Pull latest images before starting (optional)
+ExecStartPre=/usr/local/bin/docker-compose pull
+
+# Start all services
+ExecStart=/usr/local/bin/docker-compose up --remove-orphans
+
+# Stop all services
+ExecStop=/usr/local/bin/docker-compose down
+
+# Reload configuration
+ExecReload=/usr/local/bin/docker-compose restart
+
+# Health check
+ExecStartPost=/bin/bash -c 'sleep 30 && /usr/local/bin/docker-compose ps | grep -q "Up"'
+
+# Security settings
+NoNewPrivileges=yes
+ProtectHome=read-only
+ProtectSystem=strict
+ReadWritePaths=<%= $docker_dir %>
+ReadWritePaths=/opt/supabase
+CapabilityBoundingSet=CAP_DAC_OVERRIDE
+
+# Resource limits
+LimitNOFILE=65536
+TasksMax=4096
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=supabase
+
+[Install]
+WantedBy=multi-user.target 

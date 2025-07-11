@@ -1,0 +1,110 @@
+#!/bin/bash
+
+# Wait for Supabase Services to be Healthy
+# This script waits for all Supabase services to be running and healthy
+
+set -euo pipefail
+
+DOCKER_DIR="<%= $docker_dir %>"
+MAX_WAIT=300  # 5 minutes
+SLEEP_INTERVAL=10
+
+echo "Waiting for Supabase services to be healthy..."
+
+# Change to Docker directory
+cd "${DOCKER_DIR}"
+
+# Function to check if a service is healthy
+check_service_health() {
+    local service=$1
+    local status
+    status=$(docker-compose ps --format "table {{.Service}}\t{{.State}}" | grep "^${service}" | awk '{print $2}' || echo "missing")
+    
+    if [[ "$status" == "Up" ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Function to check API health
+check_api_health() {
+    # Try to connect to Kong API Gateway
+    if curl -s -f "http://localhost:8000/health" >/dev/null 2>&1; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Critical services that must be running
+CRITICAL_SERVICES=("db" "auth" "rest" "kong" "studio")
+
+start_time=$(date +%s)
+all_healthy=false
+
+while true; do
+    current_time=$(date +%s)
+    elapsed=$((current_time - start_time))
+    
+    if [ $elapsed -gt $MAX_WAIT ]; then
+        echo "ERROR: Timeout waiting for services to be healthy (${MAX_WAIT}s)"
+        echo "Current service status:"
+        docker-compose ps
+        exit 1
+    fi
+    
+    echo "Checking service health... (${elapsed}s elapsed)"
+    
+    # Check each critical service
+    healthy_count=0
+    total_services=${#CRITICAL_SERVICES[@]}
+    
+    for service in "${CRITICAL_SERVICES[@]}"; do
+        if check_service_health "$service"; then
+            echo "  ✓ $service is healthy"
+            ((healthy_count++))
+        else
+            echo "  ✗ $service is not healthy yet"
+        fi
+    done
+    
+    if [ $healthy_count -eq $total_services ]; then
+        echo "All critical services are running!"
+        
+        # Give services a moment to fully initialize
+        echo "Waiting for services to fully initialize..."
+        sleep 10
+        
+        # Check API health
+        echo "Checking API health..."
+        if check_api_health; then
+            echo "  ✓ API Gateway is responding"
+            all_healthy=true
+            break
+        else
+            echo "  ✗ API Gateway not ready yet, continuing to wait..."
+        fi
+    fi
+    
+    echo "Waiting ${SLEEP_INTERVAL}s before next check..."
+    sleep $SLEEP_INTERVAL
+done
+
+if $all_healthy; then
+    echo ""
+    echo "SUCCESS: All Supabase services are healthy and ready!"
+    echo ""
+    echo "Service status:"
+    docker-compose ps
+    echo ""
+    echo "You can now access:"
+    echo "  - Studio Dashboard: http://localhost:8000"
+    echo "  - API Endpoints: http://localhost:8000/rest/v1/"
+    echo "  - Auth API: http://localhost:8000/auth/v1/"
+    echo ""
+    exit 0
+else
+    echo "ERROR: Services did not become healthy in time"
+    exit 1
+fi 

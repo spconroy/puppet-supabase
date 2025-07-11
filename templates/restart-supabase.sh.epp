@@ -1,0 +1,48 @@
+#!/bin/bash
+
+# Restart Supabase Services
+# This script restarts the Supabase Docker Compose stack
+
+set -euo pipefail
+
+DOCKER_DIR="<%= $docker_dir %>"
+
+echo "Restarting Supabase services..."
+
+# Change to Docker directory
+cd "${DOCKER_DIR}"
+
+# Check if Docker is running
+if ! docker info >/dev/null 2>&1; then
+    echo "ERROR: Docker is not running. Please start Docker first."
+    exit 1
+fi
+
+# Restart services
+echo "Restarting Supabase stack..."
+if docker-compose restart; then
+    echo "Supabase services restarted successfully!"
+    
+    # Wait a moment for services to initialize
+    echo "Waiting for services to initialize..."
+    sleep 15
+    
+    # Show service status
+    echo "Service status:"
+    docker-compose ps
+    
+    echo ""
+    echo "Supabase has been restarted. Please wait a few minutes for all services to be ready."
+else
+    echo "ERROR: Failed to restart Supabase services"
+    echo "Attempting full restart (down then up)..."
+    
+    if docker-compose down && docker-compose up -d; then
+        echo "Full restart completed successfully!"
+        sleep 15
+        docker-compose ps
+    else
+        echo "ERROR: Full restart also failed"
+        exit 1
+    fi
+fi 

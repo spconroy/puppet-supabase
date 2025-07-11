@@ -1,0 +1,28 @@
+#!/bin/bash
+
+# Stop Supabase Services
+# This script stops the Supabase Docker Compose stack
+
+set -euo pipefail
+
+DOCKER_DIR="<%= $docker_dir %>"
+
+echo "Stopping Supabase services..."
+
+# Change to Docker directory
+cd "${DOCKER_DIR}"
+
+# Stop services
+echo "Stopping Supabase stack..."
+if docker-compose down; then
+    echo "Supabase services stopped successfully!"
+    
+    # Show remaining containers (should be empty)
+    echo "Remaining containers:"
+    docker-compose ps
+else
+    echo "ERROR: Failed to stop Supabase services"
+    exit 1
+fi
+
+echo "All Supabase services have been stopped." 

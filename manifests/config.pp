@@ -8,8 +8,8 @@ class supabase::config {
   
   # Generate additional environment variables
   $pooler_tenant_id = 'supabase-tenant'
-  $logflare_api_key = fqdn_rand_string(32, undef, 'logflare-api-key')
-  $logflare_logger_backend_api_key = fqdn_rand_string(32, undef, 'logflare-logger-backend-api-key')
+  $logflare_api_key = stdlib::fqdn_rand_string(32, undef, 'logflare-api-key')
+  $logflare_logger_backend_api_key = stdlib::fqdn_rand_string(32, undef, 'logflare-logger-backend-api-key')
 
   # Create the main .env file from template
   file { "${docker_dir}/.env":

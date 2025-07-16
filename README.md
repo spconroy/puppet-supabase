@@ -73,4 +73,26 @@ class { 'supabase':
 - View logs: `sudo journalctl -u supabase -f`
 - Health check: `sudo -u supabase /opt/supabase/health-check.sh`
 
-For detailed documentation, see the module files and templates. 
+For detailed documentation, see the module files and templates.
+
+## Automated Installation
+
+For a completely automated setup, use the installation scripts:
+
+1. **Copy files to your server**:
+   ```bash
+   scp -r /path/to/puppet-supabase root@your-server:/opt/
+   ```
+
+2. **Edit configuration**:
+   ```bash
+   cd /opt/puppet-supabase
+   nano config.sh  # Update passwords, domain, etc.
+   ```
+
+3. **Run installation**:
+   ```bash
+   sudo ./install-supabase.sh
+   ```
+
+See [INSTALL.md](INSTALL.md) for complete automated installation instructions. 

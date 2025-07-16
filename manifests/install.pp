@@ -127,37 +127,37 @@ class supabase::install {
 
   # Allow SSH (ensure we don't lock ourselves out)
   firewall { '100 allow ssh':
-    dport  => '22',
-    proto  => 'tcp',
-    action => 'accept',
+    dport => '22',
+    proto => 'tcp',
+    jump  => 'accept',
   }
 
   # Allow HTTP and HTTPS
   firewall { '200 allow http':
-    dport  => '80',
-    proto  => 'tcp',
-    action => 'accept',
+    dport => '80',
+    proto => 'tcp',
+    jump  => 'accept',
   }
 
   firewall { '201 allow https':
-    dport  => '443',
-    proto  => 'tcp',
-    action => 'accept',
+    dport => '443',
+    proto => 'tcp',
+    jump  => 'accept',
   }
 
   # Allow Supabase API port (8000) - will be proxied later
   firewall { '300 allow supabase api':
-    dport  => '8000',
-    proto  => 'tcp',
-    action => 'accept',
+    dport => '8000',
+    proto => 'tcp',
+    jump  => 'accept',
   }
 
   # Optionally allow direct PostgreSQL access (commented out by default for security)
   # Uncomment if you need direct database access from external sources
   # firewall { '400 allow postgresql':
-  #   dport  => '5432',
-  #   proto  => 'tcp',
-  #   action => 'accept',
+  #   dport => '5432',
+  #   proto => 'tcp',
+  #   jump  => 'accept',
   # }
 
   # Configure firewall to purge unmanaged rules

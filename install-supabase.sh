@@ -67,6 +67,24 @@ install_packages() {
     apt update
     apt install -y curl wget python3 python3-pip jq
     
+    # Install Puppet if not already installed
+    if ! command -v puppet &> /dev/null; then
+        log "Installing Puppet..."
+        wget https://apt.puppetlabs.com/puppet8-release-$(lsb_release -cs).deb
+        dpkg -i puppet8-release-$(lsb_release -cs).deb
+        apt update
+        apt install -y puppet-agent
+        
+        # Add Puppet to PATH
+        echo 'export PATH="/opt/puppetlabs/bin:$PATH"' >> /etc/environment
+        export PATH="/opt/puppetlabs/bin:$PATH"
+        
+        rm -f puppet8-release-*.deb
+        success "Puppet installed"
+    else
+        success "Puppet already installed"
+    fi
+    
     # Install Node.js for JWT generation (if not already installed)
     if ! command -v node &> /dev/null; then
         curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
@@ -90,7 +108,7 @@ install_puppet_modules() {
     
     for module in "${modules[@]}"; do
         log "Installing $module..."
-        if puppet module install "$module" --force; then
+        if /opt/puppetlabs/bin/puppet module install "$module" --force; then
             success "Installed $module"
         else
             warning "Failed to install $module (may already exist)"
@@ -231,12 +249,17 @@ EOF
 run_puppet() {
     log "Applying Puppet configuration..."
     
-    cd "$MODULE_PATH"
+    # Create a temporary symlink structure for Puppet module path
+    local temp_modules="/tmp/puppet-modules-$$"
+    mkdir -p "$temp_modules"
+    ln -sf "$MODULE_PATH" "$temp_modules/supabase"
     
-    if puppet apply --modulepath="$MODULE_PATH" manifests/setup.pp; then
+    if /opt/puppetlabs/bin/puppet apply --modulepath="$temp_modules" "$MODULE_PATH/manifests/setup.pp"; then
         success "Puppet configuration applied successfully!"
+        rm -rf "$temp_modules"
     else
         error "Puppet configuration failed. Check the logs above."
+        rm -rf "$temp_modules"
         return 1
     fi
 }

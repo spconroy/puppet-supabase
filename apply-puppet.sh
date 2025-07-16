@@ -38,6 +38,24 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
+# Install Puppet if not available
+if ! command -v puppet &> /dev/null && ! [ -x /opt/puppetlabs/bin/puppet ]; then
+    log "Installing Puppet..."
+    apt update
+    wget https://apt.puppetlabs.com/puppet8-release-$(lsb_release -cs).deb
+    dpkg -i puppet8-release-$(lsb_release -cs).deb
+    apt update
+    apt install -y puppet-agent
+    rm -f puppet8-release-*.deb
+    success "Puppet installed"
+fi
+
+# Set puppet command path
+PUPPET_CMD="/opt/puppetlabs/bin/puppet"
+if command -v puppet &> /dev/null; then
+    PUPPET_CMD="puppet"
+fi
+
 log "Installing required Puppet modules..."
 
 # Install Puppet modules
@@ -50,7 +68,7 @@ modules=(
 )
 
 for module in "${modules[@]}"; do
-    if puppet module install "$module" --force 2>/dev/null; then
+    if $PUPPET_CMD module install "$module" --force 2>/dev/null; then
         success "Installed $module"
     else
         warning "$module (already exists or failed)"
@@ -76,8 +94,14 @@ fi
 log "Applying Puppet configuration: $PUPPET_FILE"
 
 # Apply Puppet configuration
-if puppet apply --modulepath="$MODULE_PATH" "$PUPPET_FILE"; then
+# Create temporary module path structure
+temp_modules="/tmp/puppet-modules-$$"
+mkdir -p "$temp_modules"
+ln -sf "$MODULE_PATH" "$temp_modules/supabase"
+
+if $PUPPET_CMD apply --modulepath="$temp_modules" "$MODULE_PATH/$PUPPET_FILE"; then
     success "Puppet applied successfully!"
+    rm -rf "$temp_modules"
     echo ""
     echo "🚀 Services should be starting..."
     echo "   Check status: sudo systemctl status supabase"
@@ -85,10 +109,11 @@ if puppet apply --modulepath="$MODULE_PATH" "$PUPPET_FILE"; then
     echo "   Health check: sudo -u supabase /opt/supabase/health-check.sh"
 else
     error "Puppet apply failed!"
+    rm -rf "$temp_modules"
     echo ""
     echo "💡 Troubleshooting:"
     echo "   • Check the error messages above"
-    echo "   • Verify your manifest syntax: puppet parser validate $PUPPET_FILE"
+    echo "   • Verify your manifest syntax: $PUPPET_CMD parser validate $MODULE_PATH/$PUPPET_FILE"
     echo "   • Ensure module path is correct: $MODULE_PATH"
     exit 1
 fi 

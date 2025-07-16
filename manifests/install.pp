@@ -160,8 +160,8 @@ class supabase::install {
   #   action => accept,
   # }
 
-  # Set default firewall policy to drop
-  firewalls_purge { 'accept':
+  # Configure firewall to purge unmanaged rules
+  resources { 'firewall':
     purge => true,
   }
 

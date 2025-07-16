@@ -5,8 +5,8 @@
 #
 class supabase::install {
   # Ensure we're on a supported Ubuntu version
-  if $facts['os']['name'] != 'Ubuntu' {
-    fail('This module only supports Ubuntu')
+  if $facts['os']['family'] != 'Debian' {
+    fail("This module only supports Ubuntu/Debian. Detected: ${facts['os']['name']} (${facts['os']['family']})")
   }
 
   # System user for running Supabase

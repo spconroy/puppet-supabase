@@ -1,0 +1,127 @@
+#!/bin/bash
+
+# Supabase Backup Cleanup Script
+# Removes backup files older than the retention period
+
+set -euo pipefail
+
+# Colors for output
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+log() {
+    echo -e "${BLUE}[$(date '+%Y-%m-%d %H:%M:%S')]${NC} $1"
+}
+
+success() {
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+warning() {
+    echo -e "${YELLOW}⚠${NC} $1"
+}
+
+error() {
+    echo -e "${RED}✗${NC} $1"
+}
+
+BACKUP_DIR="<%= $backup_dir %>"
+RETENTION_DAYS="<%= $retention_days %>"
+
+# Check if running as supabase user
+if [ "$(whoami)" != "supabase" ]; then
+    error "This script must be run as the supabase user"
+    echo "Run: sudo -u supabase $0"
+    exit 1
+fi
+
+# Check if backup directory exists
+if [ ! -d "$BACKUP_DIR" ]; then
+    error "Backup directory does not exist: $BACKUP_DIR"
+    exit 1
+fi
+
+log "Starting backup cleanup..."
+log "Backup directory: $BACKUP_DIR"
+log "Retention period: $RETENTION_DAYS days"
+
+# Count files before cleanup
+total_files=$(find "$BACKUP_DIR" -name "*.sql.gz" -type f | wc -l)
+log "Total backup files found: $total_files"
+
+if [ "$total_files" -eq 0 ]; then
+    warning "No backup files found in $BACKUP_DIR"
+    exit 0
+fi
+
+# Find and remove files older than retention period
+old_files=$(find "$BACKUP_DIR" -name "*.sql.gz" -type f -mtime +$RETENTION_DAYS)
+old_count=$(echo "$old_files" | grep -c . || echo 0)
+
+if [ "$old_count" -eq 0 ]; then
+    success "No files older than $RETENTION_DAYS days found"
+    log "All $total_files backup files are within retention period"
+    exit 0
+fi
+
+log "Found $old_count files older than $RETENTION_DAYS days"
+
+# Calculate space to be freed
+total_size=0
+while IFS= read -r file; do
+    if [ -f "$file" ]; then
+        size=$(stat -c%s "$file" 2>/dev/null || echo 0)
+        total_size=$((total_size + size))
+        log "Will remove: $(basename "$file") ($(du -h "$file" | cut -f1))"
+    fi
+done <<< "$old_files"
+
+if [ "$total_size" -gt 0 ]; then
+    log "Total space to be freed: $(echo "$total_size" | awk '{print int($1/1024/1024) "MB"}')"
+fi
+
+# Remove old files
+removed_count=0
+failed_count=0
+
+while IFS= read -r file; do
+    if [ -f "$file" ]; then
+        if rm -f "$file"; then
+            removed_count=$((removed_count + 1))
+        else
+            error "Failed to remove: $file"
+            failed_count=$((failed_count + 1))
+        fi
+    fi
+done <<< "$old_files"
+
+# Summary
+remaining_files=$(find "$BACKUP_DIR" -name "*.sql.gz" -type f | wc -l)
+
+echo ""
+echo "========================================"
+echo "Backup Cleanup Summary"
+echo "========================================"
+echo "Files removed: $removed_count"
+echo "Files failed: $failed_count"
+echo "Files remaining: $remaining_files"
+echo ""
+
+if [ "$failed_count" -gt 0 ]; then
+    error "Cleanup completed with $failed_count failures"
+    exit 1
+else
+    success "Cleanup completed successfully"
+fi
+
+# List remaining backups (if not too many)
+if [ "$remaining_files" -gt 0 ] && [ "$remaining_files" -le 10 ]; then
+    echo "Remaining backup files:"
+    find "$BACKUP_DIR" -name "*.sql.gz" -type f -exec basename {} \; | sort
+elif [ "$remaining_files" -gt 10 ]; then
+    echo "Remaining backup files (showing latest 5):"
+    find "$BACKUP_DIR" -name "*.sql.gz" -type f -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -5 | cut -d' ' -f2- | xargs -I {} basename {} || true
+fi 

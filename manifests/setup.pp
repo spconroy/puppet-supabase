@@ -1,4 +1,4 @@
-node 'supabase.inventivehq.com' {
+node 'supabase-1.us-central1-f.c.tools-441408.internal' {
   class { 'supabase':
     postgres_password    => 'Trouble-Else-Wake-Shorten-6',
     jwt_secret          => 'Wash-Basic-Letter-Run-Whistle-Try-Shout-4',

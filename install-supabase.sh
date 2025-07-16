@@ -254,7 +254,7 @@ run_puppet() {
     mkdir -p "$temp_modules"
     ln -sf "$MODULE_PATH" "$temp_modules/supabase"
     
-    if /opt/puppetlabs/bin/puppet apply --modulepath="$temp_modules" "$MODULE_PATH/manifests/setup.pp"; then
+    if /opt/puppetlabs/bin/puppet apply --modulepath="$temp_modules:/etc/puppetlabs/code/environments/production/modules" "$MODULE_PATH/manifests/setup.pp"; then
         success "Puppet configuration applied successfully!"
         rm -rf "$temp_modules"
     else

@@ -99,7 +99,7 @@ temp_modules="/tmp/puppet-modules-$$"
 mkdir -p "$temp_modules"
 ln -sf "$MODULE_PATH" "$temp_modules/supabase"
 
-if $PUPPET_CMD apply --modulepath="$temp_modules" "$MODULE_PATH/$PUPPET_FILE"; then
+if $PUPPET_CMD apply --modulepath="$temp_modules:/etc/puppetlabs/code/environments/production/modules" "$MODULE_PATH/$PUPPET_FILE"; then
     success "Puppet applied successfully!"
     rm -rf "$temp_modules"
     echo ""
@@ -114,6 +114,6 @@ else
     echo "💡 Troubleshooting:"
     echo "   • Check the error messages above"
     echo "   • Verify your manifest syntax: $PUPPET_CMD parser validate $MODULE_PATH/$PUPPET_FILE"
-    echo "   • Ensure module path is correct: $MODULE_PATH"
+    echo "   • Module paths: $temp_modules and /etc/puppetlabs/code/environments/production/modules"
     exit 1
 fi 

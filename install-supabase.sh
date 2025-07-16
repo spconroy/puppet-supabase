@@ -49,7 +49,6 @@ ENABLE_BACKUPS="${ENABLE_BACKUPS:-true}"
 BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
 STORAGE_BACKEND="${STORAGE_BACKEND:-file}"
 ENABLE_MONITORING="${ENABLE_MONITORING:-false}"
-SETUP_CRON="${SETUP_CRON:-true}"
 
 
 
@@ -287,6 +286,114 @@ wait_for_services() {
     echo "  sudo -u supabase /opt/supabase/health-check.sh"
 }
 
+# Setup optional cron job for automated Puppet runs
+setup_cron_job() {
+    echo ""
+    echo "========================================"
+    echo -e "${BLUE}⏰ Automated Puppet Runs${NC}"
+    echo "========================================"
+    echo ""
+    echo "Would you like to set up a cron job to run Puppet every 30 minutes?"
+    echo "This will automatically apply any configuration changes and ensure"
+    echo "your Supabase installation stays consistent."
+    echo ""
+    
+    read -p "Set up automated Puppet runs? (Y/n): " setup_cron
+    
+    if [[ $setup_cron =~ ^[Nn]$ ]]; then
+        log "Skipping cron job setup"
+        return 0
+    fi
+    
+    log "Setting up Puppet cron job..."
+    
+    # Create the puppet run script
+    cat > /usr/local/bin/puppet-apply-supabase.sh << 'CRONEOF'
+#!/bin/bash
+
+# Automated Puppet Apply Script for Supabase
+# This script is run by cron every 30 minutes
+
+set -euo pipefail
+
+# Configuration
+MODULE_PATH="/opt/puppet-supabase"
+PUPPET_FILE="manifests/setup.pp"
+LOG_FILE="/var/log/puppet/puppet-supabase.log"
+LOCK_FILE="/var/run/puppet-supabase.lock"
+
+# Function to log with timestamp
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG_FILE"
+}
+
+# Check if another puppet run is in progress
+if [ -f "$LOCK_FILE" ]; then
+    if kill -0 "$(cat $LOCK_FILE)" 2>/dev/null; then
+        log_msg "INFO: Puppet run already in progress (PID: $(cat $LOCK_FILE))"
+        exit 0
+    else
+        log_msg "WARN: Removing stale lock file"
+        rm -f "$LOCK_FILE"
+    fi
+fi
+
+# Create lock file
+echo "$$" > "$LOCK_FILE"
+
+# Cleanup function
+cleanup() {
+    rm -f "$LOCK_FILE"
+}
+trap cleanup EXIT
+
+log_msg "INFO: Starting scheduled Puppet run"
+
+# Create temporary module path structure
+temp_modules="/tmp/puppet-modules-$$"
+mkdir -p "$temp_modules"
+ln -sf "$MODULE_PATH" "$temp_modules/supabase"
+
+# Run puppet apply
+if /opt/puppetlabs/bin/puppet apply --modulepath="$temp_modules:/etc/puppetlabs/code/environments/production/modules" "$MODULE_PATH/$PUPPET_FILE" >> "$LOG_FILE" 2>&1; then
+    log_msg "SUCCESS: Puppet run completed successfully"
+    exit_code=0
+else
+    log_msg "ERROR: Puppet run failed (exit code: $?)"
+    exit_code=1
+fi
+
+# Cleanup temporary files
+rm -rf "$temp_modules"
+
+# Rotate log file if it gets too large (> 10MB)
+if [ -f "$LOG_FILE" ] && [ $(stat -c%s "$LOG_FILE") -gt 10485760 ]; then
+    mv "$LOG_FILE" "$LOG_FILE.old"
+    log_msg "INFO: Log file rotated"
+fi
+
+exit $exit_code
+CRONEOF
+    
+    # Make script executable
+    chmod +x /usr/local/bin/puppet-apply-supabase.sh
+    
+    # Create log directory
+    mkdir -p /var/log/puppet
+    
+    # Add cron job if it doesn't exist
+    if ! grep -qF "puppet-apply-supabase.sh" /etc/crontab 2>/dev/null; then
+        echo "*/30 * * * * root /usr/local/bin/puppet-apply-supabase.sh" >> /etc/crontab
+        systemctl restart cron 2>/dev/null || systemctl restart crond 2>/dev/null || service cron restart
+        success "Cron job created - Puppet will run every 30 minutes"
+    else
+        success "Cron job already exists"
+    fi
+    
+    # Create initial log entry
+    echo "$(date '+%Y-%m-%d %H:%M:%S') INFO: Puppet cron job setup completed" >> /var/log/puppet/puppet-supabase.log
+}
+
 # Display final information
 show_final_info() {
     echo ""
@@ -310,6 +417,12 @@ show_final_info() {
     echo "  • Health check: sudo -u supabase /opt/supabase/health-check.sh"
     echo "  • Start services: sudo -u supabase /opt/supabase/start-supabase.sh"
     echo "  • Stop services: sudo -u supabase /opt/supabase/stop-supabase.sh"
+    echo ""
+    echo "⏰ Puppet Automation Commands:"
+    echo "  • Manual Puppet run: sudo /usr/local/bin/puppet-apply-supabase.sh"
+    echo "  • View Puppet logs: tail -f /var/log/puppet/puppet-supabase.log"
+    echo "  • Setup cron job: sudo ./setup-puppet-cron.sh"
+    echo "  • View cron jobs: sudo cat /etc/crontab | grep puppet"
     echo ""
     echo "📚 Next Steps:"
     echo "  1. Test the installation by accessing the Studio Dashboard"
@@ -340,6 +453,7 @@ main() {
     run_puppet
     wait_for_services
     show_final_info
+    setup_cron_job
     
     success "Installation completed successfully!"
 }

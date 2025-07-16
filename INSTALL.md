@@ -196,6 +196,44 @@ sudo /opt/supabase/renew-ssl.sh         # Renew certificates
 sudo /opt/supabase/check-ssl.sh         # Check certificate status
 ```
 
+## Automation & Maintenance
+
+### Automated Puppet Runs
+
+The installation script offers to set up a cron job that runs Puppet every 30 minutes to ensure your configuration stays consistent:
+
+```bash
+# Setup cron job during installation (prompted automatically)
+# Or setup manually after installation:
+sudo ./setup-puppet-cron.sh
+
+# Manual Puppet run
+sudo /usr/local/bin/puppet-apply-supabase.sh
+
+# View automation logs
+tail -f /var/log/puppet/puppet-supabase.log
+
+# View scheduled jobs
+sudo cat /etc/crontab | grep puppet
+
+# Disable automation (if needed)
+sudo sed -i '/puppet-apply-supabase.sh/d' /etc/crontab
+```
+
+### What Automated Runs Do
+
+- ✅ **Configuration Drift**: Corrects any manual changes back to desired state
+- ✅ **Service Recovery**: Restarts failed services automatically  
+- ✅ **Security Updates**: Ensures firewall rules stay in place
+- ✅ **Health Monitoring**: Logs any issues for review
+- ✅ **Zero Downtime**: Safe to run while services are active
+
+**Benefits:**
+- **Consistency**: Your server always matches your configuration
+- **Self-Healing**: Services restart automatically if they fail
+- **Audit Trail**: All changes are logged with timestamps
+- **Peace of Mind**: Reduces manual maintenance overhead
+
 ## Security Notes
 
 ⚠️ **Important Security Practices:**

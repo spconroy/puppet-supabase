@@ -38,6 +38,9 @@ export ENABLE_SSL="false"
 export ENABLE_BACKUPS="true"
 export BACKUP_RETENTION_DAYS="7"
 
+# Automation settings
+# export SETUP_CRON="true"  # Uncomment to auto-setup cron job during installation
+
 # Email/SMTP settings (leave empty to disable email features)
 export SMTP_HOST=""
 export SMTP_PORT=""
